@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>気象データ UI - 最終完成版</title>
+    
+    <!-- 1. Chart.js (グラフ用ライブラリ) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- 2. Odometer.js (数字回転アニメーション用ライブラリとCSS) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/odometer.js/0.4.8/themes/odometer-theme-minimal.min.css" />
+    <script>
+        // 設定を変更: 整数のみの指定にし、カンマ区切りをなくす
+        window.odometerOptions = {
+            format: '(d)'
+        };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/odometer.js/0.4.8/odometer.min.js"></script>
+
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 40px 20px; background-color: #f0f2f5; color: #333; margin: 0; }
+        h1 { text-align: center; color: #2c3e50; font-weight: 700; margin-bottom: 40px; }
+
+        .dashboard-container {
+            display: flex; gap: 24px; justify-content: center; max-width: 900px; margin: 0 auto 30px auto;
+        }
+
+        .data-card {
+            background-color: #ffffff; border-radius: 20px; padding: 30px 20px; text-align: center; flex: 1;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05); transition: transform 0.3s ease;
+        }
+        .data-card:hover { transform: translateY(-5px); }
+
+        .data-label { font-size: 16px; color: #7f8c8d; margin-bottom: 15px; font-weight: 500; }
+
+        /* 数値のスタイル。Odometerライブラリに合わせて少し調整 */
+        .data-value {
+            font-size: 48px; font-weight: 700; color: #1a73e8;
+            display: flex; justify-content: center; align-items: baseline;
+        }
+        
+        /* 小数点のドット用のスタイル */
+        .decimal-point {
+            font-size: 40px; margin: 0 2px;
+        }
+
+        .unit { font-size: 20px; color: #95a5a6; margin-left: 8px; font-weight: normal; }
+
+        .chart-card {
+            background-color: #ffffff; border-radius: 20px; padding: 30px; max-width: 900px;
+            margin: 0 auto 40px auto; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05); box-sizing: border-box;
+        }
+
+        .button-area { text-align: center; margin-bottom: 40px; }
+        
+        button { 
+            padding: 12px 30px; font-size: 16px; cursor: pointer; margin: 0 10px; 
+            background-color: #1a73e8; color: #ffffff; border: none; border-radius: 50px;
+            font-weight: bold; box-shadow: 0 4px 15px rgba(26, 115, 232, 0.3); transition: 0.2s;
+        }
+        button:hover { background-color: #1557b0; box-shadow: 0 6px 20px rgba(26, 115, 232, 0.4); }
+
+        @media (max-width: 768px) {
+            .dashboard-container { flex-direction: column; }
+            .chart-card { padding: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <h1>気象データ モニタリング</h1>
+
+    <div class="dashboard-container">
+        <div class="data-card">
+            <div class="data-label">温度</div>
+            <div class="data-value">
+                <!-- 整数部と小数部を分割しました -->
+                <span id="temp-int" class="odometer">00</span>
+                <span class="decimal-point">.</span>
+                <span id="temp-dec" class="odometer">0</span>
+                <span class="unit">℃</span>
+            </div>
+        </div>
+        <div class="data-card">
+            <div class="data-label">湿度</div>
+            <div class="data-value">
+                <span id="hum-int" class="odometer">00</span>
+                <span class="decimal-point">.</span>
+                <span id="hum-dec" class="odometer">0</span>
+                <span class="unit">%</span>
+            </div>
+        </div>
+        <div class="data-card">
+            <div class="data-label">気圧</div>
+            <div class="data-value">
+                <span id="pres-int" class="odometer">0000</span>
+                <span class="decimal-point">.</span>
+                <span id="pres-dec" class="odometer">0</span>
+                <span class="unit">hPa</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="chart-card">
+        <canvas id="tempChart"></canvas>
+    </div>
+
+    <div class="button-area">
+        <button onclick="updateData()">1回取得</button>
+        <button onclick="startAutoUpdate()">自動更新スタート</button>
+    </div>
+
+    <script>
+        // --- グラフの初期設定 (変更なし) ---
+        const timeLabels = []; 
+        const tempHistory = []; 
+
+        const ctx = document.getElementById('tempChart').getContext('2d');
+        const tempChart = new Chart(ctx, {
+            type: 'line', 
+            data: {
+                labels: timeLabels, 
+                datasets: [{
+                    label: '温度推移 (℃)', data: tempHistory, 
+                    borderColor: '#1a73e8', backgroundColor: 'rgba(26, 115, 232, 0.1)', fill: true,
+                    borderWidth: 3, tension: 0.4, pointBackgroundColor: '#ffffff', pointBorderColor: '#1a73e8',
+                    pointRadius: 4, pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true, animation: false,
+                scales: { y: { suggestedMin: 20, suggestedMax: 30 } }
+            }
+        });
+
+        // --- データの更新処理 ---
+        // 整数部と小数部を分けて更新するための専用関数を作成
+        function updateOdometerSplit(baseId, value) {
+            // "25.0" のように文字列にし、"." の前後で分割する
+            const parts = value.toFixed(1).split('.');
+            const intPart = parts[0]; // 整数部 ("25")
+            const decPart = parts[1]; // 小数部 ("0")
+            
+            const elInt = document.getElementById(baseId + "-int");
+            if (elInt) elInt.innerHTML = intPart;
+            
+            const elDec = document.getElementById(baseId + "-dec");
+            if (elDec) elDec.innerHTML = decPart;
+        }
+
+        function updateData() {
+            const newTemp = 25.0 + (Math.random() - 0.5) * 2;
+            const newHum = 60.0 + (Math.random() - 0.5) * 5;
+            const newPres = 1013.0 + (Math.random() - 0.5) * 3;
+            
+            // 分割更新用の関数を呼び出す
+            updateOdometerSplit("temp", newTemp);
+            updateOdometerSplit("hum", newHum);
+            updateOdometerSplit("pres", newPres);
+
+            // グラフの更新処理
+            const now = new Date();
+            const timeString = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
+            timeLabels.push(timeString);
+            tempHistory.push(newTemp.toFixed(1));
+
+            if (timeLabels.length > 15) { timeLabels.shift(); tempHistory.shift(); }
+            tempChart.update();
+        }
+
+        function startAutoUpdate() {
+            // Odometerの回転が終わる前に次のデータが来るとチカチカするため、
+            // 更新間隔を少し長め(3秒 = 3000ミリ秒)に設定します
+            setInterval(updateData, 3000);
+        }
+    </script>
+</body>
+</html>
