@@ -155,15 +155,24 @@
                     const newHum = parseFloat(feed.field2);
                     const newPres = parseFloat(feed.field3);
                     
-                    // UIの更新 (Odometer)
-                    const tempElement = document.getElementById("temp-display");
-                    if (tempElement && !isNaN(newTemp)) tempElement.innerHTML = newTemp.toFixed(1);
-                    
-                    const humElement = document.getElementById("hum-display");
-                    if (humElement && !isNaN(newHum)) humElement.innerHTML = newHum.toFixed(1);
-                    
-                    const presElement = document.getElementById("pres-display");
-                    if (presElement && !isNaN(newPres)) presElement.innerHTML = newPres.toFixed(1);
+                    // UIの更新 (Odometer用に整数部と小数部を分割して代入)
+                    if (!isNaN(newTemp)) {
+                        const tempStr = newTemp.toFixed(1).split('.'); // 例: "25.4" を ["25", "4"] に分割
+                        document.getElementById("temp-int").innerHTML = tempStr[0];
+                        document.getElementById("temp-dec").innerHTML = tempStr[1];
+                    }
+
+                    if (!isNaN(newHum)) {
+                        const humStr = newHum.toFixed(1).split('.');
+                        document.getElementById("hum-int").innerHTML = humStr[0];
+                        document.getElementById("hum-dec").innerHTML = humStr[1];
+                    }
+
+                    if (!isNaN(newPres)) {
+                        const presStr = newPres.toFixed(1).split('.');
+                        document.getElementById("pres-int").innerHTML = presStr[0];
+                        document.getElementById("pres-dec").innerHTML = presStr[1];
+                    }
 
                     // グラフの更新処理
                     const now = new Date();
