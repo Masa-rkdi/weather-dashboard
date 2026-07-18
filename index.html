@@ -135,43 +135,55 @@
 
         // --- データの更新処理 ---
         // 整数部と小数部を分けて更新するための専用関数を作成
-        function updateOdometerSplit(baseId, value) {
-            // "25.0" のように文字列にし、"." の前後で分割する
-            const parts = value.toFixed(1).split('.');
-            const intPart = parts[0]; // 整数部 ("25")
-            const decPart = parts[1]; // 小数部 ("0")
+       function updateData() {
+            // ★ご自身の Channel ID と Read API Key に書き換えてください
+            const channelID = "3428859"; 
+            const readAPIKey = "1AHL37VI4W1BSVZ1";
             
-            const elInt = document.getElementById(baseId + "-int");
-            if (elInt) elInt.innerHTML = intPart;
-            
-            const elDec = document.getElementById(baseId + "-dec");
-            if (elDec) elDec.innerHTML = decPart;
-        }
+            // 最新の1件(results=1)だけを取得するURL
+            const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${readAPIKey}&results=1`;
 
-        function updateData() {
-            const newTemp = 25.0 + (Math.random() - 0.5) * 2;
-            const newHum = 60.0 + (Math.random() - 0.5) * 5;
-            const newPres = 1013.0 + (Math.random() - 0.5) * 3;
-            
-            // 分割更新用の関数を呼び出す
-            updateOdometerSplit("temp", newTemp);
-            updateOdometerSplit("hum", newHum);
-            updateOdometerSplit("pres", newPres);
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    // データがまだ1件も無い場合は処理を中断
+                    if (data.feeds.length === 0) return;
 
-            // グラフの更新処理
-            const now = new Date();
-            const timeString = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
-            timeLabels.push(timeString);
-            tempHistory.push(newTemp.toFixed(1));
+                    const feed = data.feeds[0];
+                    // ThingSpeakからは文字(String)として送られてくるので、数値(Float)に変換
+                    const newTemp = parseFloat(feed.field1);
+                    const newHum = parseFloat(feed.field2);
+                    const newPres = parseFloat(feed.field3);
+                    
+                    // UIの更新 (Odometer)
+                    const tempElement = document.getElementById("temp-display");
+                    if (tempElement && !isNaN(newTemp)) tempElement.innerHTML = newTemp.toFixed(1);
+                    
+                    const humElement = document.getElementById("hum-display");
+                    if (humElement && !isNaN(newHum)) humElement.innerHTML = newHum.toFixed(1);
+                    
+                    const presElement = document.getElementById("pres-display");
+                    if (presElement && !isNaN(newPres)) presElement.innerHTML = newPres.toFixed(1);
 
-            if (timeLabels.length > 15) { timeLabels.shift(); tempHistory.shift(); }
-            tempChart.update();
+                    // グラフの更新処理
+                    const now = new Date();
+                    const timeString = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
+                    timeLabels.push(timeString);
+                    tempHistory.push(newTemp.toFixed(1));
+
+                    if (timeLabels.length > 15) { timeLabels.shift(); tempHistory.shift(); }
+                    tempChart.update();
+                })
+                .catch(error => {
+                    console.error('通信エラー:', error);
+                });
         }
 
         function startAutoUpdate() {
-            // Odometerの回転が終わる前に次のデータが来るとチカチカするため、
-            // 更新間隔を少し長め(3秒 = 3000ミリ秒)に設定します
-            setInterval(updateData, 3000);
+            // ThingSpeakへの負荷を考慮し、更新間隔を20秒(20000ミリ秒)に設定します
+            setInterval(updateData, 20000);
+            // 開始ボタンを押した直後にも1回実行しておく
+            updateData();
         }
     </script>
 </body>
