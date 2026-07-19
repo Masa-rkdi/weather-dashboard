@@ -52,15 +52,6 @@
             margin: 0 auto 40px auto; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05); box-sizing: border-box;
         }
 
-        .button-area { text-align: center; margin-bottom: 40px; }
-        
-        button { 
-            padding: 12px 30px; font-size: 16px; cursor: pointer; margin: 0 10px; 
-            background-color: #1a73e8; color: #ffffff; border: none; border-radius: 50px;
-            font-weight: bold; box-shadow: 0 4px 15px rgba(26, 115, 232, 0.3); transition: 0.2s;
-        }
-        button:hover { background-color: #1557b0; box-shadow: 0 6px 20px rgba(26, 115, 232, 0.4); }
-
         @media (max-width: 768px) {
             .dashboard-container { flex-direction: column; }
             .chart-card { padding: 15px; }
@@ -105,13 +96,8 @@
         <canvas id="tempChart"></canvas>
     </div>
 
-    <div class="button-area">
-        <button onclick="updateData()">1回取得</button>
-        <button onclick="startAutoUpdate()">自動更新スタート</button>
-    </div>
-
     <script>
-        // --- グラフの初期設定 (変更なし) ---
+        // --- グラフの初期設定 ---
         const timeLabels = []; 
         const tempHistory = []; 
 
@@ -122,9 +108,14 @@
                 labels: timeLabels, 
                 datasets: [{
                     label: '温度推移 (℃)', data: tempHistory, 
-                    borderColor: '#1a73e8', backgroundColor: 'rgba(26, 115, 232, 0.1)', fill: true,
-                    borderWidth: 3, tension: 0.4, pointBackgroundColor: '#ffffff', pointBorderColor: '#1a73e8',
-                    pointRadius: 4, pointHoverRadius: 6
+                    borderColor: '#1a73e8', backgroundColor: 'rgba(26, 115, 232, 0.1)', 
+                    
+                    fill: false, 
+                    borderWidth: 2, 
+                    tension: 0, 
+                    pointRadius: 0, 
+                    pointHoverRadius: 4, 
+                    pointBackgroundColor: '#ffffff', pointBorderColor: '#1a73e8'
                 }]
             },
             options: {
@@ -134,53 +125,59 @@
         });
 
         // --- データの更新処理 ---
-        // 整数部と小数部を分けて更新するための専用関数を作成
-       function updateData() {
-            // ★ご自身の Channel ID と Read API Key に書き換えてください
+        function updateData() {
             const channelID = "3428859"; 
             const readAPIKey = "1AHL37VI4W1BSVZ1";
             
-            // 最新の1件(results=1)だけを取得するURL
-            const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${readAPIKey}&results=1`;
+            // results=180 で過去1時間分(20秒間隔×180回)のデータを一括取得
+            const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${readAPIKey}&results=180`;
 
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
-                    // データがまだ1件も無い場合は処理を中断
                     if (data.feeds.length === 0) return;
 
-                    const feed = data.feeds[0];
-                    // ThingSpeakからは文字(String)として送られてくるので、数値(Float)に変換
-                    const newTemp = parseFloat(feed.field1);
-                    const newHum = parseFloat(feed.field2);
-                    const newPres = parseFloat(feed.field3);
+                    // グラフ用の配列を毎回空にして、取得した全データを入れ直す
+                    timeLabels.length = 0;
+                    tempHistory.length = 0;
+
+                    // 全データをループ処理してグラフ用配列を構築
+                    data.feeds.forEach(feed => {
+                        const temp = parseFloat(feed.field1);
+                        if (!isNaN(temp)) {
+                            // ThingSpeakの時間はUTCなので、日本時間に変換してラベルにする
+                            const date = new Date(feed.created_at);
+                            const timeString = String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+                            
+                            timeLabels.push(timeString);
+                            tempHistory.push(temp.toFixed(1));
+                        }
+                    });
+
+                    // --- Odometer (UI) の更新処理 ---
+                    // 取得したデータ配列の一番最後（最新のデータ）を取り出す
+                    const latestFeed = data.feeds[data.feeds.length - 1];
+                    const newTemp = parseFloat(latestFeed.field1);
+                    const newHum = parseFloat(latestFeed.field2);
+                    const newPres = parseFloat(latestFeed.field3);
                     
-                    // UIの更新 (Odometer用に整数部と小数部を分割して代入)
                     if (!isNaN(newTemp)) {
-                        const tempStr = newTemp.toFixed(1).split('.'); // 例: "25.4" を ["25", "4"] に分割
+                        const tempStr = newTemp.toFixed(1).split('.'); 
                         document.getElementById("temp-int").innerHTML = tempStr[0];
                         document.getElementById("temp-dec").innerHTML = tempStr[1];
                     }
-
                     if (!isNaN(newHum)) {
                         const humStr = newHum.toFixed(1).split('.');
                         document.getElementById("hum-int").innerHTML = humStr[0];
                         document.getElementById("hum-dec").innerHTML = humStr[1];
                     }
-
                     if (!isNaN(newPres)) {
                         const presStr = newPres.toFixed(1).split('.');
                         document.getElementById("pres-int").innerHTML = presStr[0];
                         document.getElementById("pres-dec").innerHTML = presStr[1];
                     }
 
-                    // グラフの更新処理
-                    const now = new Date();
-                    const timeString = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
-                    timeLabels.push(timeString);
-                    tempHistory.push(newTemp.toFixed(1));
-
-                    if (timeLabels.length > 15) { timeLabels.shift(); tempHistory.shift(); }
+                    // グラフを更新
                     tempChart.update();
                 })
                 .catch(error => {
@@ -191,9 +188,12 @@
         function startAutoUpdate() {
             // ThingSpeakへの負荷を考慮し、更新間隔を20秒(20000ミリ秒)に設定します
             setInterval(updateData, 20000);
-            // 開始ボタンを押した直後にも1回実行しておく
+            // ページ読み込み直後にも1回実行しておく
             updateData();
         }
+
+        // ページ読み込み完了時に自動的に更新処理をスタートさせる
+        window.onload = startAutoUpdate;
     </script>
 </body>
 </html>
